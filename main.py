@@ -9,7 +9,7 @@ getcontext().prec = 10
 
 
 class CheckRealCostChangeAPP:
-
+    """Application class that monitors the change in its own price ETHUSDT"""
     def __init__(self):
         self.GET_URL = "wss://fstream.binance.com/stream?streams=btcusdt@markPrice@1s/ethusdt@markPrice@1s"
         self.GET_HISTORY_URL = "https://fapi.binance.com/fapi/v1/trades"
@@ -23,12 +23,14 @@ class CheckRealCostChangeAPP:
         self.profitability = {"BTCUSDT": self.BTC_PROF, "ETHUSDT": self.ETH_PROF}
         asyncio.run(self.__init_task_group_create())
 
+    # A function that creates 2 tasks for getting transaction histories ETHUSDT and BTCUSDT
     async def __init_task_group_create(self):
         async with asyncio.TaskGroup() as tg:
             get_btc_usdt_history = tg.create_task(self.__get_history(self.GET_HISTORY_URL, "BTCUSDT"))
             get_btc_usdt_history = tg.create_task(self.__get_history(self.GET_HISTORY_URL, "ETHUSDT"))
 
-    async def __get_history(self, url, symbol):
+    # Get request to api to get the history of operations
+    async def __get_history(self, url: str, symbol: str) -> None:
         params = {"symbol": f"{symbol}", "limit": "1000"}
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params) as resp:
@@ -37,19 +39,22 @@ class CheckRealCostChangeAPP:
                 for i in range(length):
                     if i >= 1:
                         self.profitability.get(f"{symbol}").append(
-                            Decimal(response[i]["price"])/Decimal(response[i-1]["price"]) - Decimal(1))
+                            self.__calc_profitability(response[i-1]["price"], response[i]["price"]))
                 self.coins.get(f"{symbol}").append(response[-1]["price"])
 
-    def __calc_predict(self, value):
+    # Calculate or recalculate a linear regression model, predict a value.
+    def __calc_predict(self, value: Decimal) -> Decimal:
         x_train = np.array(self.BTC_PROF).reshape((-1, 1))
         y_train = np.array(self.ETH_PROF)
         model = LinearRegression().fit(x_train, y_train)
         return Decimal(model.predict(np.array([value]).reshape((-1, 1)))[0])
 
-    def __calc_profitability(self, old, new):
+    # Calculating profitability based on new value and previous
+    def __calc_profitability(self, old: str, new: str) -> Decimal:
         return (Decimal(new)/Decimal(old)) - Decimal(1)
 
-    def __calc_clear_change(self):
+    # Calculation of own price increase ETHUSDT and accumulation of changes
+    def __calc_clear_change(self) -> None:
         btc_old, eth_old = self.BTC_VALS[-2], self.ETH_VALS[-2]
         btc_new, eth_new = self.BTC_VALS[-1], self.ETH_VALS[-1]
         profitability_btc = self.__calc_profitability(btc_old, btc_new)
@@ -59,11 +64,11 @@ class CheckRealCostChangeAPP:
         eth_clear_change = profitability_eth - self.__calc_predict(profitability_btc)
         self.ETH_CHANGE_LIST.append(eth_clear_change)
         percent_change = (Decimal(sum(self.ETH_CHANGE_LIST)) * Decimal(100)) / Decimal(self.ETH_VALS[0])
-        print(btc_new)
         if abs(percent_change) >= 1:
             print(f"Own price value of ETHUSDT has changed for the last hour by more than 1%: {percent_change}")
 
-    async def __create_websocket_with_binance(self, url):
+    # Creating a web socket connection to get the price "BTCUSDT, ETHUSDT" every second
+    async def __create_websocket_with_binance(self, url: str) -> None:
         counter_btc = 0
         counter_eth = 0
         async with aiohttp.ClientSession() as session:
@@ -83,7 +88,8 @@ class CheckRealCostChangeAPP:
                     elif msg.type == aiohttp.WSMsgType.ERROR:
                         print("connection error")
 
-    def run(self):
+    # Method to launch the application
+    def run(self) -> None:
         asyncio.run(self.__create_websocket_with_binance(self.GET_URL))
 
 
